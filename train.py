@@ -17,6 +17,7 @@ import hook
 import easypyxl
 from torch.autograd import Variable
 import torch.nn.functional as F
+from cifar10_models.wideresnet import WideResNet
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -94,10 +95,15 @@ def main(args):
         model = PreActResNet18()
     elif args.model_name == 'preAct_resnet18_reg':  
         model = PreActResNet18_reg()      
+    elif args.model_name == 'WRN':
+        model = WideResNet()
+    elif args.model_name == 'WRN_reg':
+        model = WideResNet(reg = True)
 
-    f = open("./results/" + args.model_name + " " + args.training_method + " " + "baseline_" + str(batch_size) + ".txt",'a')
-    f.write("model : %s, training_method : %s, loss : %s, alpha : %.3f, epoch : %d, batch size: %d "%(args.model_name,args.training_method, args.reg_loss, alpha, epoches, batch_size))
-    print ("model : %s, training_method : %s, loss : %s, alpha : %.3f, epoch : %d, batch size: %d "%(args.model_name,args.training_method, args.reg_loss, alpha, epoches, batch_size))
+
+    f = open("./results/" + args.model_name + " " + args.training_method + " "  + str(batch_size) + ".txt",'a')
+    f.write("model : %s, training_method : %s, loss : %s, alpha : %.3f, epoch : %d, batch size: %d num_classes : %d \n"%(args.model_name,args.training_method, args.reg_loss, alpha, epoches, batch_size,num_classes))
+    print ("model : %s, training_method : %s, loss : %s, alpha : %.3f, epoch : %d, batch size: %d num_classes : %d"%(args.model_name,args.training_method, args.reg_loss, alpha, epoches, batch_size,num_classes))
 
     model = nn.Sequential(
         Normalization([0.485,0.456,0.406],[0.229,0.224,0.225],device),
@@ -118,7 +124,8 @@ def main(args):
         adjust_learning_rate(lr, optimizer, epoch)
         train(model,train_loader,optimizer,train_attack,alpha,reg_loss,args.training_method)
         clean_acc, fgsm_acc, pgd_acc, cw_acc = evaluate(model,test_loader,test_attack,epoch,f)
-        adv_acc = (fgsm_acc + pgd_acc + cw_acc)/3.
+        # adv_acc = (fgsm_acc + pgd_acc + cw_acc)/3.
+        adv_acc = pgd_acc
         if best_adv_acc < adv_acc:
             best_clean_acc = clean_acc
             best_adv_acc = adv_acc
@@ -127,9 +134,12 @@ def main(args):
             best_cw_acc = cw_acc
             torch.save(model.state_dict(),args.best_model_path)
         
+
     print (f"Best_clean_acc : {best_clean_acc:>.3f},Best_robust_acc : {best_adv_acc:>.3f}, Best_fgsm_acc : {best_fgsm_acc:>.3f}, Best_pgd_acc : {best_pgd_acc:>.3f}, Best_cw_acc : {best_cw_acc:>.3f}")
     print (f"Last_clean_acc : {clean_acc:>.3f}, Last_robust_acc : {adv_acc:>.3f}, Last_fgsm_acc : {fgsm_acc:>.3f}, Last_pgd_acc : {pgd_acc:>.3f}, Last_cw_acc : {cw_acc:>.3f} ")
     print ("="* 20)
+    f.write(f"Best_clean_acc : {best_clean_acc:>.3f},Best_robust_acc : {best_adv_acc:>.3f}, Best_fgsm_acc : {best_fgsm_acc:>.3f}, Best_pgd_acc : {best_pgd_acc:>.3f}, Best_cw_acc : {best_cw_acc:>.3f} \n")
+    f.write(f"Last_clean_acc : {clean_acc:>.3f}, Last_robust_acc : {adv_acc:>.3f}, Last_fgsm_acc : {fgsm_acc:>.3f}, Last_pgd_acc : {pgd_acc:>.3f}, Last_cw_acc : {cw_acc:>.3f} \n ")
 
     torch.save(model.state_dict(),args.last_model_path)
 
@@ -166,11 +176,13 @@ def train(model,train_loader,optimizer,train_attack,alpha,reg_loss,training_meth
     train_loss = 0
     correct = 0
     features = hook.FeatureExtractor(model,0)
-    criterion_kl = nn.KLDivLoss(size_average=False)
+    
     if training_method == 'TRADES' :
         beta = 6.0
+        criterion_kl = nn.KLDivLoss(size_average=False)
     elif training_method == 'MART' :
         beta = 5.0
+        criterion_kl = nn.KLDivLoss(reduction='none')
 
     for batch_idx, (x,y) in tqdm(enumerate(train_loader)):
         batch_size = x.shape[0]
@@ -195,8 +207,11 @@ def train(model,train_loader,optimizer,train_attack,alpha,reg_loss,training_meth
             for (clean_feature,adv_feature) in zip(activations_clean.values(),activations_adv.values()):
                 feature_loss += reg_loss(clean_feature.mean(dim = (2,3)),adv_feature.mean(dim  =(2,3)))
 
+        M = len(activations_clean)
+        alpha = alpha *(1/M)
+
         if training_method == 'AT':
-            loss = ce_adv_loss + alpha * feature_loss
+            loss = ce_adv_loss + alpha *feature_loss
 
         elif training_method == 'TRADES':
             z = model(x)
@@ -205,6 +220,7 @@ def train(model,train_loader,optimizer,train_attack,alpha,reg_loss,training_meth
             loss = loss_natural + beta * loss_robust + alpha * feature_loss
 
         elif training_method == 'MART':
+            
             z = model(x)
             adv_probs = F.softmax(z_adv, dim=1)
             tmp1 = torch.argsort(adv_probs, dim=1)[:, -2:]
@@ -214,9 +230,9 @@ def train(model,train_loader,optimizer,train_attack,alpha,reg_loss,training_meth
             nat_probs = F.softmax(z, dim=1)
             true_probs = torch.gather(nat_probs, 1, (y.unsqueeze(1)).long()).squeeze()
 
-            loss_robust = (1.0 / batch_size) * (criterion_kl(torch.log(adv_probs + 1e-12), nat_probs) * (1.0000001 - true_probs))
+            loss_robust = (1.0 / batch_size) * torch.sum(torch.sum(criterion_kl(torch.log(adv_probs + 1e-12), nat_probs), dim=1) * (1.0000001 - true_probs))
             loss = loss_adv + float(beta) * loss_robust + alpha * feature_loss
-
+    
 
         loss.backward()
         optimizer.step()
@@ -277,7 +293,7 @@ def evaluate(model,test_loader,attack,epoch,f):
     # adv_acc = adv_acc/total_samples
     if (epoch+1) % 10 == 0 :
         print (f"epoch : {epoch + 1: d}, clean_acc: {clean_acc :>.3f}, fgsm_acc : {fgsm_acc :>.3f}, pgd_acc : {pgd_acc :>.3f}, cw_acc : {cw_acc :>.3f}",flush = True)
-        f.write(f"epoch : {epoch + 1: d}, clean_acc: {clean_acc :>.3f}, fgsm_acc : {fgsm_acc :>.3f}, pgd_acc : {pgd_acc :>.3f}, cw_acc : {cw_acc :>.3f}")
+        f.write(f"epoch : {epoch + 1: d}, clean_acc: {clean_acc :>.3f}, fgsm_acc : {fgsm_acc :>.3f}, pgd_acc : {pgd_acc :>.3f}, cw_acc : {cw_acc :>.3f},\n")
    
     return clean_acc, fgsm_acc, pgd_acc, cw_acc
 
