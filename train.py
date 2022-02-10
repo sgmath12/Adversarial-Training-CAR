@@ -18,9 +18,9 @@ def main(args):
 
     num_classes = int(args.num_classes)
     if num_classes == 10 and args.dataset == 'cifar':
-        train_set,test_set = dataset.CIFAR10(normalize=False,download=False)
+        train_set,test_set = dataset.CIFAR10(root = './dataset',normalize=False,download=False)
     elif num_classes == 100:
-        train_set,test_set = dataset.CIFAR100(normalize=False,download=False)
+        train_set,test_set = dataset.CIFAR100(root = './dataset',normalize=False,download=False)
         
     batch_size = int(args.batch_size)
     epoches = int(args.epoches)

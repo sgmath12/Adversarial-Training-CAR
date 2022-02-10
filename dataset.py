@@ -2,7 +2,7 @@ import torchvision
 import torchvision.transforms as transforms
 import pdb
 
-def MNIST(root = '/mnt/server8_hard3/seungju/dataset',normalize = False,download = False):
+def MNIST(root = '/dataset',normalize = False,download = False):
 
     transform = transforms.Compose([
         transforms.ToTensor()
@@ -14,7 +14,7 @@ def MNIST(root = '/mnt/server8_hard3/seungju/dataset',normalize = False,download
     return train_set,val_set
 
 
-def FashionMNIST(root = '/mnt/server8_hard3/seungju/dataset',normalize = False):
+def FashionMNIST(root = '/dataset',normalize = False):
 
     transform = transforms.Compose([
         transforms.ToTensor()
@@ -25,7 +25,7 @@ def FashionMNIST(root = '/mnt/server8_hard3/seungju/dataset',normalize = False):
 
     return train_set,val_set
 
-def CIFAR10(root = '/mnt/server8_hard3/seungju/dataset/CIFAR10',normalize = False,download = False):
+def CIFAR10(root = '/dataset',normalize = False,download = False):
     if normalize == True:
         transform = transforms.Compose([
             transforms.ToTensor(),
@@ -46,7 +46,7 @@ def CIFAR10(root = '/mnt/server8_hard3/seungju/dataset/CIFAR10',normalize = Fals
     
     return train_set,val_set
 
-def CIFAR100(root = '/mnt/server8_hard3/seungju/dataset/CIFAR100',normalize = False,download = False):
+def CIFAR100(root = '/dataset',normalize = False,download = False):
     if normalize == True:
         transform = transforms.Compose([
             transforms.ToTensor(),
@@ -66,7 +66,7 @@ def CIFAR100(root = '/mnt/server8_hard3/seungju/dataset/CIFAR100',normalize = Fa
     
     return train_set,val_set
 
-def IMAGENET(root = 'C:\\datasets\\ImageNet\\',normalize = False):
+def IMAGENET(root = '/dataset',normalize = False):
     if normalize == False:
         transform = transforms.Compose([
             transforms.Resize((224,224)),
@@ -87,7 +87,7 @@ def IMAGENET(root = 'C:\\datasets\\ImageNet\\',normalize = False):
     return None,val_set
 
 
-def SVHN(root = '/mnt/server8_hard3/seungju/dataset/SVHN',normalize = False,download = False):
+def SVHN(root = '/dataset',normalize = False,download = False):
     if normalize == True:
         transform = transforms.Compose([
             transforms.ToTensor(),
