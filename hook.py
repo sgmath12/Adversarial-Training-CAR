@@ -31,14 +31,21 @@ class FeatureExtractor(nn.Module):
 
     def register_forward_hook(self,model):
         idx = 0
-        layer_names = ['1.layer1','1.layer2','1.layer3','1.layer4']
+        layer_names = [
+                    # '1.layer1',
+                       '1.layer2',
+                       '1.layer3',
+                       '1.layer4',
+                       '1.pool1'
+                       ]
         for name,layer in model.named_modules():
-
+            
             if name in layer_names:
                 layer.register_forward_hook(self.get_activation(idx))
                 self.names[idx] = name
                 idx += 1
-
+                
+            
         self.layer_numbers = idx
 
     def unregister_forward_pre_hook(self,model,target_layer_idx):
@@ -47,8 +54,8 @@ class FeatureExtractor(nn.Module):
 
     def get_activation(self,idx):
         def hook_fn(module,input,output):
-            self.activations[idx] = output
-            # self.activations[idx] = input[0]
+            # self.activations[idx] = output
+            self.activations[idx] = input[0]
         return hook_fn
 
     def modify_activations(self):
