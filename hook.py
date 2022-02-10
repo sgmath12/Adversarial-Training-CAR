@@ -1,7 +1,7 @@
 from torch import nn
 import torch
+from cifar10_models import resnet
 import pdb
-
 
 
 class FeatureExtractor(nn.Module):
@@ -31,23 +31,15 @@ class FeatureExtractor(nn.Module):
 
     def register_forward_hook(self,model):
         idx = 0
+        layer_names = ['1.layer1','1.layer2','1.layer3','1.layer4']
         for name,layer in model.named_modules():
-            # if isinstance(layer, nn.Conv2d) or isinstance(layer,nn.ReLU) or isinstance(layer,nn.BatchNorm2d) :
-            # if isinstance(layer, nn.ReLU):
-            if isinstance(layer, nn.Conv2d):
+
+            if name in layer_names:
                 layer.register_forward_hook(self.get_activation(idx))
                 self.names[idx] = name
                 idx += 1
-        self.layer_numbers = idx
 
-    def register_forward_pre_hook(self,model,target_layer_idx):
-        for name,layer in model.named_modules():
-            self.target_layer_name = name
-            if isinstance(layer, nn.Conv2d) or isinstance(layer,nn.ReLU) or isinstance(layer,nn.BatchNorm2d) :
-                if idx == target_layer_idx:
-                    self.registerd = layer.register_forward_pre_hook(self.modify_activations())
-                    break
-                idx += 1
+        self.layer_numbers = idx
 
     def unregister_forward_pre_hook(self,model,target_layer_idx):
         idx = 0
@@ -55,8 +47,8 @@ class FeatureExtractor(nn.Module):
 
     def get_activation(self,idx):
         def hook_fn(module,input,output):
-            # self.activations[idx] = output
-            self.activations[idx] = input[0]
+            self.activations[idx] = output
+            # self.activations[idx] = input[0]
         return hook_fn
 
     def modify_activations(self):

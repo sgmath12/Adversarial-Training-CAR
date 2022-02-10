@@ -55,8 +55,6 @@ def _cw_whitebox(model,
 
     return X_pgd
 
-
-
 class Normalization(nn.Module):
     def __init__(self, mean, std,device):
         super(Normalization, self).__init__()
@@ -69,18 +67,24 @@ class Normalization(nn.Module):
         return (img - self.mean) / self.std
 
 
-
 def main(args): 
     best_adv_acc, best_clean_acc = 0,0
     best_fgsm_acc = best_pgd_acc = best_cw_acc = 0.0
-    train_set,test_set = dataset.CIFAR10(normalize=False,download=False)
-    num_classes = 10
+    
+    num_classes = int(args.num_classes)
+    if num_classes == 10 and args.dataset == 'cifar':
+        train_set,test_set = dataset.CIFAR10(normalize=False,download=False)
+    elif num_classes == 10 and args.dataset == 'svhn':
+        train_set,test_set = dataset.SVHN(normalize=False,download=False)
+    elif num_classes == 100:
+        train_set,test_set = dataset.CIFAR100(normalize=False,download=False)
+        
     batch_size = int(args.batch_size)
-    epoches = 100
+    epoches = int(args.epoches)
     train_loader = torch.utils.data.DataLoader(train_set,batch_size = batch_size, shuffle = True)
     test_loader = torch.utils.data.DataLoader(test_set,batch_size = batch_size,shuffle = False)
-    layer_idx = int(args.layer_idx)
     alpha = float(args.alpha)
+    lr = float(args.lr)
     training_method = args.training_method
     reg_loss = nn.MSELoss() if args.reg_loss == 'l2_loss' else nn.L1Loss()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -88,60 +92,65 @@ def main(args):
     # model = vgg13_bn(pretrained=True if args.pre_trained else False)
     
     if args.model_name == 'resnet18':
-        model = ResNet18()
+        model = ResNet18(num_classes = num_classes)
     elif args.model_name == 'resnet18_reg':
-        model = ResNet18_reg()
-    elif args.model_name == 'preAct_resnet18':
-        model = PreActResNet18()
-    elif args.model_name == 'preAct_resnet18_reg':  
-        model = PreActResNet18_reg()      
-    elif args.model_name == 'WRN':
-        model = WideResNet()
-    elif args.model_name == 'WRN_reg':
-        model = WideResNet(reg = True)
+        model = ResNet18_reg(num_classes = num_classes)
 
 
-    f = open("./results/" + args.model_name + " " + args.training_method + " "  + str(batch_size) + ".txt",'a')
-    f.write("model : %s, training_method : %s, loss : %s, alpha : %.3f, epoch : %d, batch size: %d num_classes : %d \n"%(args.model_name,args.training_method, args.reg_loss, alpha, epoches, batch_size,num_classes))
-    print ("model : %s, training_method : %s, loss : %s, alpha : %.3f, epoch : %d, batch size: %d num_classes : %d"%(args.model_name,args.training_method, args.reg_loss, alpha, epoches, batch_size,num_classes))
+
+   
+    print ("model : %s, training_method : %s, loss : %s, alpha : %.3f, epoches : %d, batch size: %d , num_classes : %d , lr : %.2f , load : %s"%(args.model_name,args.training_method, args.reg_loss, alpha, epoches, batch_size,num_classes,lr, args.load), flush = True)
 
     model = nn.Sequential(
         Normalization([0.485,0.456,0.406],[0.229,0.224,0.225],device),
         model
         )
 
+
     model = model.to(device)
     if args.training_method == 'AT' or args.training_method == 'MART':
         train_attack = torchattacks.PGD(model, eps = 8/255,steps = 7)
     elif args.training_method == 'TRADES':
-        train_attack = torchattacks.TPGD(model,eps = 8/255)
+        train_attack = torchattacks.TPGD(model,eps = 8/255,steps = 7)
 
     test_attack = torchattacks.PGD(model,eps = 8/255,steps = 20)
-    lr = 1e-2
+    # lr = 1e-2 #0.01
     optimizer = optim.SGD(model.parameters(), lr = lr, momentum=0.9, weight_decay=0.0002)
     clean_acc = adv_acc = 0
     for epoch in range(epoches):
         adjust_learning_rate(lr, optimizer, epoch)
         train(model,train_loader,optimizer,train_attack,alpha,reg_loss,args.training_method)
-        clean_acc, fgsm_acc, pgd_acc, cw_acc = evaluate(model,test_loader,test_attack,epoch,f)
-        # adv_acc = (fgsm_acc + pgd_acc + cw_acc)/3.
-        adv_acc = pgd_acc
-        if best_adv_acc < adv_acc:
-            best_clean_acc = clean_acc
-            best_adv_acc = adv_acc
-            best_fgsm_acc = fgsm_acc
-            best_pgd_acc = pgd_acc
-            best_cw_acc = cw_acc
-            torch.save(model.state_dict(),args.best_model_path)
+        # last_pgd_acc = evaluate_PGD(model,test_loader,epoch)
+
+        # if best_pgd_acc < last_pgd_acc:
+            # best_pgd_acc = last_pgd_acc
+            # torch.save(model.state_dict(),args.best_model_path)
+
         
-
-    print (f"Best_clean_acc : {best_clean_acc:>.3f},Best_robust_acc : {best_adv_acc:>.3f}, Best_fgsm_acc : {best_fgsm_acc:>.3f}, Best_pgd_acc : {best_pgd_acc:>.3f}, Best_cw_acc : {best_cw_acc:>.3f}")
-    print (f"Last_clean_acc : {clean_acc:>.3f}, Last_robust_acc : {adv_acc:>.3f}, Last_fgsm_acc : {fgsm_acc:>.3f}, Last_pgd_acc : {pgd_acc:>.3f}, Last_cw_acc : {cw_acc:>.3f} ")
-    print ("="* 20)
-    f.write(f"Best_clean_acc : {best_clean_acc:>.3f},Best_robust_acc : {best_adv_acc:>.3f}, Best_fgsm_acc : {best_fgsm_acc:>.3f}, Best_pgd_acc : {best_pgd_acc:>.3f}, Best_cw_acc : {best_cw_acc:>.3f} \n")
-    f.write(f"Last_clean_acc : {clean_acc:>.3f}, Last_robust_acc : {adv_acc:>.3f}, Last_fgsm_acc : {fgsm_acc:>.3f}, Last_pgd_acc : {pgd_acc:>.3f}, Last_cw_acc : {cw_acc:>.3f} \n ")
-
     torch.save(model.state_dict(),args.last_model_path)
+    last_clean_acc, last_fgsm_acc, last_pgd_acc, last_cw_acc, last_aa_acc  = evaluate(model,test_loader)
+    print (f"Last_clean_acc : {last_clean_acc:>.5f}, Last_fgsm_acc : {last_fgsm_acc:>.5f}, Last_pgd_acc : {last_pgd_acc:>.5f}, Last_cw_acc : {last_cw_acc:>.5f}, Last_aa_acc : {last_aa_acc:>.5f}  ",flush = True)
+
+    
+    # if args.model_name == 'resnet18':
+    #     best_model = ResNet18(num_classes = num_classes)
+    # elif args.model_name == 'resnet18_reg':
+    #     best_model = ResNet18_reg(num_classes = num_classes)    
+
+
+    # best_model = nn.Sequential(
+    #     Normalization([0.485,0.456,0.406],[0.229,0.224,0.225],device),
+    #     best_model
+    #     )
+
+    # best_model.load_state_dict(torch.load(args.best_model_path))
+    # best_model = best_model.to(device)
+    # best_clean_acc, best_fgsm_acc, best_cw_acc, best_aa_acc = evaluate(best_model,test_loader)
+
+    # print (f"Best_clean_acc : {best_clean_acc:>.5f}, Best_fgsm_acc : {best_fgsm_acc:>.5f}, Best_pgd_acc : {best_pgd_acc:>.5f}, Best_cw_acc : {best_cw_acc:>.5f}, Best_aa_acc : {best_aa_acc:>.5f}", flush = True)
+    # print ("="* 20)
+   
+    
 
 
 def PGD_attack_untargeted(model, x,label_y,eps = 8/255, steps = 1):
@@ -157,7 +166,6 @@ def PGD_attack_untargeted(model, x,label_y,eps = 8/255, steps = 1):
     
     x_adv = torch.clip(x+delta,0,1)
     return x_adv
-
 
 
 def train(model,train_loader,optimizer,train_attack,alpha,reg_loss,training_method = None):
@@ -190,38 +198,20 @@ def train(model,train_loader,optimizer,train_attack,alpha,reg_loss,training_meth
         optimizer.zero_grad()
         x,y = x.to(device),y.to(device)
         # z_clean = model(x)
-        z_clean = features(x)
-        activations_clean = features.activations.copy()
-
-        N,C,H,W = x.shape
+        z = model(x)
         x_adv = train_attack(x,y)
-
-        # x_adv = PGD_attack_untargeted(model,x,y)
-        z_adv = features(x_adv)
-        activations_adv = features.activations.copy()
-
-        ce_adv_loss = criterion(z_adv,y)
-        feature_loss = 0
-
-        if alpha > 0 :
-            for (clean_feature,adv_feature) in zip(activations_clean.values(),activations_adv.values()):
-                feature_loss += reg_loss(clean_feature.mean(dim = (2,3)),adv_feature.mean(dim  =(2,3)))
-
-        M = len(activations_clean)
-        alpha = alpha *(1/M)
+        z_adv = model(x_adv)
 
         if training_method == 'AT':
-            loss = ce_adv_loss + alpha *feature_loss
+            ce_adv_loss = criterion(z_adv,y)
+            loss = ce_adv_loss 
 
         elif training_method == 'TRADES':
-            z = model(x)
             loss_natural = criterion(z, y)
-            loss_robust = (1.0 / batch_size) * criterion_kl(F.log_softmax(model(x_adv), dim=1), F.softmax(model(x), dim=1))
-            loss = loss_natural + beta * loss_robust + alpha * feature_loss
+            loss_robust = (1.0 / batch_size) * criterion_kl(F.log_softmax(z_adv, dim=1), F.softmax(z, dim=1))
+            loss = loss_natural + beta * loss_robust 
 
         elif training_method == 'MART':
-            
-            z = model(x)
             adv_probs = F.softmax(z_adv, dim=1)
             tmp1 = torch.argsort(adv_probs, dim=1)[:, -2:]
 
@@ -231,32 +221,54 @@ def train(model,train_loader,optimizer,train_attack,alpha,reg_loss,training_meth
             true_probs = torch.gather(nat_probs, 1, (y.unsqueeze(1)).long()).squeeze()
 
             loss_robust = (1.0 / batch_size) * torch.sum(torch.sum(criterion_kl(torch.log(adv_probs + 1e-12), nat_probs), dim=1) * (1.0000001 - true_probs))
-            loss = loss_adv + float(beta) * loss_robust + alpha * feature_loss
+            loss = loss_adv + float(beta) * loss_robust
     
 
         loss.backward()
         optimizer.step()
 
-        z_clean_out = z_clean.argmax(dim = 1)
-        z_adv_out = z_adv.argmax(dim = 1)
-        clean_acc = (z_clean_out ==y).sum()
-        adv_acc = (z_adv_out == y).sum()
+
 
         # if batch_idx % 10 == 0 : 
         #     print (f"clean_acc: {clean_acc/total_samples :>.3f}, adv_acc : {adv_acc/total_samples :>.3f}")
 
-
-def evaluate(model,test_loader,attack,epoch,f):
+def evaluate_PGD(model,test_loader,epoch):
     model.eval()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     clean_acc = 0
     fgsm_acc = pgd_acc = cw_acc = 0
     total_samples = 0
-    fgsm_attack = torchattacks.FGSM(model,eps = 8/255)
-    pgd_attack = torchattacks.PGD(model,eps = 8/255,steps = 20)
-    # cw_attack = torchattacks.CW(model, c=1, kappa=0, steps=20, lr=0.01)
-    # aa_attack = torchattacks.AutoAttack(model,eps = 8/255)
 
+    pgd_attack = torchattacks.PGD(model,eps = 8/255,steps = 20)
+  
+    for i,(x,y) in enumerate(test_loader):
+        total_samples += x.shape[0]
+        x,y = x.to(device), y.to(device)
+        x_pgd = pgd_attack(x,y)
+        z_pgd = model(x_pgd)
+
+        z_pgd_out = z_pgd.argmax(dim = 1)
+        pgd_acc += (z_pgd_out == y).sum()
+
+    pgd_acc = pgd_acc/total_samples
+
+    # adv_acc = adv_acc/total_samples
+    if (epoch+1) % 1 == 0 :
+        print (f"epoch : {epoch + 1: d}, pgd_acc : {pgd_acc :>.5f}",flush = True)
+       
+    return pgd_acc
+
+
+
+def evaluate(best_model,test_loader):
+    best_model.eval()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    clean_acc = 0
+    fgsm_acc = cw_acc = aa_acc = pgd_acc =  0
+    total_samples = 0
+    fgsm_attack = torchattacks.FGSM(best_model,eps = 8/255)
+    pgd_attack = torchattacks.PGD(best_model,eps = 8/255,steps = 20)
+    aa_attack = torchattacks.AutoAttack(best_model, eps = 8/255)
 
     for i,(x,y) in enumerate(test_loader):
         total_samples += x.shape[0]
@@ -264,38 +276,39 @@ def evaluate(model,test_loader,attack,epoch,f):
         
         x_fgsm = fgsm_attack(x,y)
         x_pgd = pgd_attack(x,y)
-        x_cw = _cw_whitebox(model,x,y)
-        # x_cw = pgd_attack(x,y)
+        x_cw = _cw_whitebox(best_model,x,y)
+        x_aa = aa_attack(x,y)
 
-        
 
-        z_clean = model(x)
-        z_fgsm = model(x_fgsm)
-        z_pgd = model(x_pgd)
-        z_cw = model(x_cw)
+        z_clean = best_model(x)
+        z_fgsm = best_model(x_fgsm)
+        z_pgd = best_model(x_pgd)
+        z_cw = best_model(x_cw)
+        z_aa = best_model(x_aa)
+
 
         z_clean_out = z_clean.argmax(dim = 1)
         z_fgsm_out = z_fgsm.argmax(dim = 1)
         z_pgd_out = z_pgd.argmax(dim = 1)
         z_cw_out = z_cw.argmax(dim = 1)
+        z_aa_out = z_aa.argmax(dim = 1)
+
 
         clean_acc += (z_clean_out ==y).sum()
         fgsm_acc += (z_fgsm_out == y).sum()
         pgd_acc += (z_pgd_out == y).sum()
         cw_acc += (z_cw_out == y).sum()
-        # print (f"epoch : {epoch : d}, clean_acc: {clean_acc/total_samples :>.3f}, adv_acc : {adv_acc/total_samples :>.3f}")
-        # print (i,)
+        aa_acc += (z_aa_out == y).sum()
+
+
      
     clean_acc = clean_acc/total_samples
     fgsm_acc = fgsm_acc/total_samples
     pgd_acc = pgd_acc/total_samples
     cw_acc = cw_acc/total_samples
-    # adv_acc = adv_acc/total_samples
-    if (epoch+1) % 10 == 0 :
-        print (f"epoch : {epoch + 1: d}, clean_acc: {clean_acc :>.3f}, fgsm_acc : {fgsm_acc :>.3f}, pgd_acc : {pgd_acc :>.3f}, cw_acc : {cw_acc :>.3f}",flush = True)
-        f.write(f"epoch : {epoch + 1: d}, clean_acc: {clean_acc :>.3f}, fgsm_acc : {fgsm_acc :>.3f}, pgd_acc : {pgd_acc :>.3f}, cw_acc : {cw_acc :>.3f},\n")
+    aa_acc = aa_acc/total_samples
    
-    return clean_acc, fgsm_acc, pgd_acc, cw_acc
+    return clean_acc, fgsm_acc, pgd_acc, cw_acc, aa_acc
 
 def adjust_learning_rate(lr, optimizer, epoch):
     if epoch >= 75:
@@ -312,15 +325,17 @@ def argument_parsing():
 
     parser.add_argument("--model_name", default="resnet18")
     parser.add_argument("--batch_size", default=128, help="batch_size")
-    parser.add_argument("--layer_idx", default=2, help="layer_index")
+    parser.add_argument("--num_classes", default=10, help="num classes")
+    parser.add_argument("--epoches", default=100, help="batch_size")
+    parser.add_argument("--dataset", default='cifar', help="layer_index")
     parser.add_argument("--alpha", default=0, help="layer_index")
     parser.add_argument("--training_method", default = "AT", help = "TRADES or MART")
     parser.add_argument("--reg_loss", default = 'l1_loss',help="l2_loss or l1_loss")
-    parser.add_argument("--use_feature", dest = 'use_feature', action = 'store_true')
-    parser.add_argument("--pre_trained", dest = 'pre_trained', action = 'store_true')
-    parser.add_argument("--file_idx", default = '1')
+    parser.add_argument("--lr", default = '0.01')
     parser.add_argument("--best_model_path", default = './check_point/best_model.pth')
     parser.add_argument("--last_model_path", default = './check_point/last_model.pth')
+    parser.add_argument("--load", default='False')
+
 
     return parser
 
