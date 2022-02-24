@@ -2,6 +2,7 @@ from torch.autograd import Variable
 import torch
 import torch.optim as optim
 import torch.nn as nn
+import torch.nn.functional as F
 
 def _cw_whitebox(model,
                   X,
@@ -12,6 +13,7 @@ def _cw_whitebox(model,
                   beta=2.0):
     # out = model(X)
     # err = (out.data.max(1)[1] != y.data).float().sum()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     X_pgd = Variable(X.data, requires_grad=True)
     random_noise = torch.FloatTensor(*X_pgd.shape).uniform_(-epsilon, epsilon).to(device)
     X_pgd = Variable(X_pgd.data + random_noise, requires_grad=True)
