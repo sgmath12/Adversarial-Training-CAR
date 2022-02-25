@@ -18,6 +18,7 @@ class FeatureExtractor(nn.Module):
         super(FeatureExtractor,self).__init__()
         self.model = model
         self.activations = {}
+        self.activation_list = []
         self.names = {}
         self.layer_numbers = 0
         self.layer_idx = layer_idx
@@ -56,6 +57,7 @@ class FeatureExtractor(nn.Module):
         def hook_fn(module,input,output):
             # self.activations[idx] = output
             self.activations[idx] = input[0]
+            self.activation_list.append(input[0].mean(dim = (2,3)))
         return hook_fn
 
     def modify_activations(self):

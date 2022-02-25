@@ -82,27 +82,33 @@ def train(model,train_loader,optimizer,train_attack,alpha,beta,reg_loss,criterio
     
 
     for batch_idx, (x,y) in enumerate(train_loader):
+        N,C,H,W = x.shape
         batch_size = x.shape[0]
         total_samples += batch_size
         optimizer.zero_grad()
         x,y = x.to(device),y.to(device)
 
+        features.activation_list = []
         z_clean = features(x)
         activations_clean = features.activations.copy()
+        activations_clean_list = torch.cat(features.activation_list,dim = 1)
+        activations_clean_list = activations_clean_list.to(device)
 
-        N,C,H,W = x.shape
+        
         x_adv = train_attack(x,y)
-
+        features.activation_list = []
         z_adv = features(x_adv)
-        activations_adv = features.activations.copy()
-
+        # activations_adv = features.activations.copy()
+        activations_adv_list = torch.cat(features.activation_list, dim = 1)
+        activations_adv_list = activations_adv_list.to(device)
         ce_adv_loss = criterion(z_adv,y)
         feature_loss = 0
 
         if alpha > 0 :
-            for (clean_feature,adv_feature) in zip(activations_clean.values(),activations_adv.values()):
-                feature_loss += reg_loss(clean_feature.mean(dim = (2,3)),adv_feature.mean(dim  =(2,3)))
-
+            # for (clean_feature,adv_feature) in zip(activations_clean.values(),activations_adv.values()):
+            #     feature_loss += reg_loss(clean_feature.mean(dim = (2,3)),adv_feature.mean(dim  =(2,3)))
+            feature_loss = reg_loss(activations_clean_list,activations_adv_list)
+            
         M = len(activations_clean) 
         if training_method == 'AT':
             loss = ce_adv_loss + alpha * (1/M) * feature_loss
