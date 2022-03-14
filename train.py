@@ -116,7 +116,7 @@ def train(model,train_loader,optimizer,train_attack,alpha,beta,reg_loss,criterio
         elif training_method == 'TRADES':
             z = model(x)
             loss_natural = criterion(z, y)
-            loss_robust = (1.0 / batch_size) * criterion_kl(F.log_softmax(model(x_adv), dim=1), F.softmax(model(x), dim=1))
+            loss_robust = (1.0 / batch_size) * criterion_kl(F.log_softmax(model(x_adv), dim=1), F.softmax(z, dim=1))
             loss = loss_natural + beta * loss_robust + alpha * (1/M) * feature_loss
 
         elif training_method == 'MART':
